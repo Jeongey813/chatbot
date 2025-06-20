@@ -1,203 +1,58 @@
-import os
-import datetime as dt
-from typing import List, Dict, Any
-
-import requests
 import streamlit as st
 from openai import OpenAI
 
-###############################################################################
-# CareerMate – Streamlit prototype                                            #
-# --------------------------------------------------------------------------- #
-# A profession‑aware assistant that curates news & events, gives explanations #
-# and offers conversational feedback.                                         #
-###############################################################################
-
-st.set_page_config(page_title="CareerMate – Profession‑aware Chatbot", page_icon="💬", layout="wide")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Sidebar – user preferences & API keys
-# ──────────────────────────────────────────────────────────────────────────────
-st.sidebar.header("🔧 설정 / Settings")
-
-openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
-news_api_key = st.sidebar.text_input("News API Key (optional)", type="password", value=os.getenv("NEWS_API_KEY", ""))
-event_api_key = st.sidebar.text_input("Eventbrite API Key (optional)", type="password", value=os.getenv("EVENTBRITE_API_KEY", ""))
-
-profession = st.sidebar.text_input("🧑‍💼 직업 / 분야", placeholder="예: UI/UX 디자이너")
-location = st.sidebar.text_input("📍 위치 (도시)", placeholder="예: Seoul")
-
-st.sidebar.caption("API 키를 .streamlit/secrets.toml 또는 환경변수에 저장해 두면 더 편리합니다.")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Validation
-# ──────────────────────────────────────────────────────────────────────────────
-if not openai_api_key:
-    st.error("❗ OpenAI API Key가 필요합니다.")
-    st.stop()
-
-# Create OpenAI client
-client = OpenAI(api_key=openai_api_key)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Helper functions – external data fetch
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _query_news(profession: str) -> List[Dict[str, str]]:
-    """Fetch top 3 recent news headlines related to the profession."""
-    if not news_api_key:
-        return []
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": profession or "career",
-        "language": "ko,en",
-        "sortBy": "publishedAt",
-        "pageSize": 3,
-        "apiKey": news_api_key,
-    }
-    try:
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
-        data = res.json()
-        return [
-            {"title": art["title"], "url": art["url"], "source": art["source"]["name"]}
-            for art in data.get("articles", [])
-        ]
-    except Exception as e:
-        st.warning(f"뉴스를 불러오는 데 실패했습니다: {e}")
-        return []
-
-
-def _query_events(location: str, profession: str) -> List[Dict[str, str]]:
-    """Fetch upcoming events in the user's city (next 30 days)."""
-    if not event_api_key or not location:
-        return []
-
-    url = "https://www.eventbriteapi.com/v3/events/search/"
-    params = {
-        "q": profession or "networking",
-        "location.address": location,
-        "start_date.range_start": dt.datetime.utcnow().isoformat() + "Z",
-        "start_date.range_end": (dt.datetime.utcnow() + dt.timedelta(days=30)).isoformat() + "Z",
-        "token": event_api_key,
-        "expand": "venue",
-    }
-    try:
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
-        data = res.json()
-        events = []
-        for ev in data.get("events", [])[:3]:
-            events.append(
-                {
-                    "name": ev["name"]["text"],
-                    "url": ev["url"],
-                    "start": ev["start"]["local"][:10],
-                    "venue": ev.get("venue", {}).get("name", ""),
-                }
-            )
-        return events
-    except Exception as e:
-        st.warning(f"이벤트를 불러오는 데 실패했습니다: {e}")
-        return []
-
-
-# Cached wrappers
-@st.cache_data(show_spinner=False)
-def fetch_news_and_events(profession: str, location: str):
-    return _query_news(profession), _query_events(location, profession)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# System prompt builder
-# ──────────────────────────────────────────────────────────────────────────────
-
-def build_system_prompt() -> str:
-    date_str = dt.datetime.now().strftime("%Y-%m-%d")
-    base = (
-        "You are CareerMate, a multilingual professional assistant. "
-        "Today's date is "
-        f"{date_str}."
-    )
-    if profession:
-        base += f" The user's profession is '{profession}'."
-    if location:
-        base += f" The user is located in {location}."
-    base += (
-        " Curate relevant news and events, and provide clear, concise, and actionable feedback. "
-        "When asked for a daily briefing, provide a bullet summary in Korean, then offer deeper dives."
-    )
-    return base
-
-# ──────────────────────────────────────────────────────────────────────────────
-# UI – main
-# ──────────────────────────────────────────────────────────────────────────────
-
-st.title("💬 CareerMate – 커리어메이트")
-
-st.markdown(
-    """
-    **직업 맞춤형 뉴스·이벤트·피드백 챗봇**  
-    원하는 정보를 물어보거나, **/brief** 명령어로 데일리 브리핑을 받아보세요.
-    """
+# Show title and description.
+st.title("💬 CareerMate")
+st.write(
+    "CareerMate는 사용자의 직업과 위치에 맞춘 뉴스, 이벤트, 정보를 제공하는 맞춤형 챗봇입니다.
+     전문 분야에 대한 정보 탐색과 성장에 실질적인 도움을 주는 커리어 동반자입니다."
+    "This is a simple chatbot that uses OpenAI's GPT-4o-mini model to generate responses. "
+    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
+    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
 )
 
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages: List[Dict[str, Any]] = []
-    st.session_state.messages.append({"role": "system", "content": build_system_prompt()})
+# Ask user for their OpenAI API key via `st.text_input`.
+# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
+# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
+openai_api_key = st.text_input("OpenAI API Key", type="password")
+if not openai_api_key:
+    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
+else:
 
-# Display existing messages
-for m in st.session_state.messages:
-    if m["role"] == "system":
-        continue  # don't show system prompt
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"], unsafe_allow_html=True)
+    # Create an OpenAI client.
+    client = OpenAI(api_key=openai_api_key)
 
-# Chat input
-user_input = st.chat_input("메시지를 입력하세요… (/brief 로 데일리 브리핑)")
+    # Create a session state variable to store the chat messages. This ensures that the
+    # messages persist across reruns.
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-if user_input:
+    # Display the existing chat messages via `st.chat_message`.
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-    # Store user message
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+    # Create a chat input field to allow the user to enter a message. This will display
+    # automatically at the bottom of the page.
+    if prompt := st.chat_input("What is up?"):
 
-    # Special command: /brief generates daily briefing using external data
-    if user_input.strip().lower().startswith("/brief"):
-        with st.spinner("뉴스와 이벤트를 모으는 중…"):
-            news, events = fetch_news_and_events(profession, location)
+        # Store and display the current prompt.
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-        # Build briefing prompt
-        briefing_context = """You gathered the following data:\n\n"""
-        if news:
-            briefing_context += "Recent news headlines:\n" + "\n".join(f"- {n['title']} ({n['source']})" for n in news) + "\n\n"
-        if events:
-            briefing_context += "Upcoming events:\n" + "\n".join(
-                f"- {e['start']} {e['name']} @ {e['venue']}" for e in events
-            ) + "\n\n"
-        if not news and not events:
-            briefing_context += "(No external data available)\n\n"
-        briefing_context += "Please craft a Korean daily briefing in bullet points (max 120 words), then suggest next actions."
+        # Generate a response using the OpenAI API.
+        stream = client.chat.completions.create(
+            model="gpt-4o-mini-turbo",
+            messages=[
+                {"role": m["role"], "content": m["content"]}
+                for m in st.session_state.messages
+            ],
+            stream=True,
+        )
 
-        # Add as system‑level augmentation
-        st.session_state.messages.append({"role": "system", "content": briefing_context})
-
-    # Call OpenAI chat completion
-    with st.chat_message("assistant"):
-        with st.spinner("답변 작성 중…"):
-            response_chunks = client.chat.completions.create(
-                model="gpt-4o-mini-turbo",  # or change to suitable model id
-                messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ],
-                stream=True,
-            )
-            response_text = st.write_stream(response_chunks)
-
-    # Save assistant response
-    st.session_state.messages.append({"role": "assistant", "content": response_text})
-
-# Footer
-st.caption("Made with Streamlit • © 2025 CareerMate")
+        # Stream the response to the chat using `st.write_stream`, then store it in 
+        # session state.
+        with st.chat_message("assistant"):
+            response = st.write_stream(stream)
+        st.session_state.messages.append({"role": "assistant", "content": response})
